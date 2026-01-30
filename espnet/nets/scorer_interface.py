@@ -19,11 +19,6 @@ class ScorerInterface:
         * Decoder networks of the sequence-to-sequence models
             * :class:`espnet.nets.pytorch_backend.nets.transformer.decoder.Decoder`
             * :class:`espnet.nets.pytorch_backend.nets.rnn.decoders.Decoder`
-        * Neural language models
-            * :class:`espnet.nets.pytorch_backend.lm.transformer.TransformerLM`
-            * :class:`espnet.nets.pytorch_backend.lm.default.DefaultRNNLM`
-            * :class:`espnet.nets.pytorch_backend.lm.seq_rnn.SequentialRNNLM`
-
     """
 
     def init_state(self, x: torch.Tensor, modality: str) -> Any:

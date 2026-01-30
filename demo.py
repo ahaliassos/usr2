@@ -16,6 +16,10 @@ Override backbone:
     python demo.py --video path/to/video.mp4 --checkpoint path/to/model.pth \
         model/backbone=resnet_transformer_large
 
+Choose landmark detector (auto-detects by default, preferring mediapipe):
+    python demo.py ... detector=mediapipe
+    python demo.py ... detector=retinaface
+
 Any additional Hydra overrides can be appended after the script arguments.
 """
 
@@ -94,15 +98,28 @@ def load_video_audio(path: str, target_fps: int = 25, target_sr: int = 16000):
 # ---------------------------------------------------------------------------
 
 def build_video_transform():
-    """Mouth-crop -> normalised grayscale tensor (C, T, H, W)."""
+    """Mouth-crop -> normalised grayscale tensor (T, H, W)."""
     return Compose([
         Lambda(lambda x: x / 255.0),
         CenterCrop(88),
         Lambda(lambda x: x.transpose(0, 1)),  # (C,T,H,W) -> (T,C,H,W) for Grayscale
         Grayscale(),
-        Lambda(lambda x: x.transpose(0, 1)),  # back to (C,T,H,W)
+        Lambda(lambda x: x.transpose(0, 1)),  # (T,1,H,W) -> (1,T,H,W) for NormalizeVideo
         NormalizeVideo(mean=(0.421,), std=(0.165,)),
+        Lambda(lambda x: x.squeeze(0)),       # (1,T,H,W) -> (T,H,W)
     ])
+
+
+def save_mouth_crop(mouth_video: np.ndarray, output_path: str = "mouth_crop.mp4", fps: int = 25):
+    """Save the raw mouth crop as a video file for inspection."""
+    T, H, W, C = mouth_video.shape
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (W, H))
+    for t in range(T):
+        frame = cv2.cvtColor(mouth_video[t], cv2.COLOR_RGB2BGR)
+        writer.write(frame)
+    writer.release()
+    log.info("Saved mouth crop to: %s (%d frames, %dx%d)", output_path, T, W, H)
 
 
 def preprocess_video(video_frames: np.ndarray, landmarks_detector, video_processor):
@@ -114,10 +131,11 @@ def preprocess_video(video_frames: np.ndarray, landmarks_detector, video_process
             "Could not detect a face in enough frames. "
             "Make sure the video contains a clearly visible face."
         )
+    save_mouth_crop(mouth_video)
     # (T, H, W, C) -> (C, T, H, W) float tensor
     video_tensor = torch.from_numpy(mouth_video).permute(3, 0, 1, 2).float()
     video_tensor = build_video_transform()(video_tensor)
-    return video_tensor
+    return video_tensor  # (T, H, W)
 
 
 # ---------------------------------------------------------------------------
@@ -129,13 +147,17 @@ def load_model(cfg: DictConfig, checkpoint_path: str, device: torch.device):
     model = E2E(len(UNIGRAM1000_LIST), cfg.model.backbone)
 
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    # Support both full-state and backbone-only checkpoints
+    # Strip torch.compile prefix if present
+    if any(k.startswith("_orig_mod.") for k in ckpt):
+        ckpt = {k.replace("_orig_mod.", "", 1): v for k, v in ckpt.items()}
+    # Strip wrapper module prefix if present
     if any(k.startswith("model.backbone.") for k in ckpt):
         ckpt = {
             k.replace("model.backbone.", "", 1): v
-            for k, v in ckpt.items() if "backbone." in k
+            for k, v in ckpt.items()
+            if k.startswith("model.backbone.")
         }
-    model.load_state_dict(ckpt, strict=False)
+    model.load_state_dict(ckpt)
     model.eval().to(device)
     return model
 
@@ -148,12 +170,10 @@ def build_beam_search(cfg: DictConfig, model: E2E):
     """Build a BatchBeamSearch scorer."""
     token_list = UNIGRAM1000_LIST
     scorers = model.scorers()
-    scorers["lm"] = None
     scorers["length_bonus"] = LengthBonus(len(token_list))
     weights = dict(
         decoder=1.0 - cfg.decode.ctc_weight,
         ctc=cfg.decode.ctc_weight,
-        lm=cfg.decode.lm_weight,
         length_bonus=cfg.decode.penalty,
     )
     return BatchBeamSearch(
@@ -196,7 +216,23 @@ def transcribe(video_path: str, cfg: DictConfig, modality: str = "av",
 
     # --- face / mouth preprocessing -----------------------------------------
     log.info("Detecting landmarks and cropping mouth region ...")
-    ld = LandmarksDetector(device=str(device), model_name="mobilenet0.25")
+    detector = cfg.get("detector", "auto")
+    if detector == "auto":
+        try:
+            import mediapipe  # noqa: F401
+            detector = "mediapipe"
+        except ImportError:
+            try:
+                from ibug.face_detection import RetinaFacePredictor  # noqa: F401
+                detector = "retinaface"
+            except ImportError:
+                raise ImportError(
+                    "No landmark detector found. Install one of:\n"
+                    "  pip install mediapipe\n"
+                    "  bash preprocessing/setup_ibug.sh"
+                )
+        log.info("Auto-detected landmark detector: %s", detector)
+    ld = LandmarksDetector(detector=detector, device=str(device))
     vp = VideoProcess(convert_gray=False)
     video_tensor = preprocess_video(video_frames, ld, vp)
 
@@ -207,7 +243,7 @@ def transcribe(video_path: str, cfg: DictConfig, modality: str = "av",
     beam_search.to(device)
 
     # --- encode --------------------------------------------------------------
-    video_input = video_tensor.unsqueeze(0).to(device)       # (1, C, T, H, W)
+    video_input = video_tensor.unsqueeze(0).to(device)       # (1, T, H, W)
     audio_input = audio.unsqueeze(0).to(device).transpose(1, 2)  # (1, S, 1) -> (1, 1, S)
 
     modality_key = modality[0].lower() if modality not in ("a", "v", "av") else modality

@@ -133,7 +133,8 @@ class E2E(torch.nn.Module):
 
     def scorers(self):
         """Scorers."""
-        return dict(decoder=self.decoder, ctc=CTCPrefixScorer(self.ctc_v, self.ctc_a, self.ctc_av, self.eos))
+        ctc_scorer = CTCPrefixScorer(self.ctc_v, self.ctc_a, self.ctc_av, self.eos) if self.ctc_v is not None else None
+        return dict(decoder=self.decoder, ctc=ctc_scorer)
 
     def forward_labelled(self, x_v, x_a, x_av, padding_mask, targets):
         ys_in_pad, ys_out_pad = add_sos_eos(targets, self.sos, self.eos, self.ignore_id)

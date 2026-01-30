@@ -4,7 +4,6 @@ from pytorch_lightning import LightningModule
 
 from espnet.asr.asr_utils import add_results_to_json, torch_load
 from espnet.nets.batch_beam_search import BatchBeamSearch
-from espnet.nets.pytorch_backend.lm.transformer import TransformerLM
 from espnet.nets.pytorch_backend.nets_utils import make_non_pad_mask
 from espnet.nets.scorers.length_bonus import LengthBonus
 from metrics import WER
@@ -43,20 +42,11 @@ class USREvaluator(LightningModule):
 
         scorers = model.scorers()
 
-        if self.cfg.decode.lm_weight and self.cfg.model.pretrained_lm_path:
-            lm = TransformerLM(len(token_list), self.cfg.model.language_model)
-            set_requires_grad(lm, False)
-            torch_load(self.cfg.model.pretrained_lm_path, lm)
-        else:
-            lm = None
-
-        scorers["lm"] = lm
         scorers["length_bonus"] = LengthBonus(len(token_list))
 
         weights = dict(
             decoder=1.0 - self.cfg.decode.ctc_weight,
             ctc=self.cfg.decode.ctc_weight,
-            lm=self.cfg.decode.lm_weight,
             length_bonus=self.cfg.decode.penalty,
         )
         beam_search = BatchBeamSearch(

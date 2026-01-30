@@ -7,3 +7,10 @@ omegaconf>=2.3
 opencv-python
 torchmetrics
 numpy
+tqdm
+av
+# Optional: mediapipe backend (easy install, no git cloning needed)
+# pip install mediapipe
+#
+# Optional: ibug backend (requires manual install, see setup_ibug.sh)
+# ibug.face_detection and ibug.face_alignment must be installed from source

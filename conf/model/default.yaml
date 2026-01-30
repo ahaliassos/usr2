@@ -1,13 +1,11 @@
 defaults:
-  - backbone: resnet_transformer_base
-  - language_model: default
+  - backbone: resnet_transformer_huge
 obj:
   _target_: models.usr.USR
 target_dropout_off: True
 pretrained_model_path:
-pretrained_lm_path:
 v2a_weight: 0
 avg_branches: False
 soft_inputs: False
 normalize_length: False
-ctc_rel_weight: 0.0
+ctc_rel_weight: 0.1

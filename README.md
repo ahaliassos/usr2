@@ -2,7 +2,7 @@
 
 **Pay Attention to CTC: Fast and Robust Pseudo-Labelling for Unified Speech Recognition**
 
-A unified model for **audio**, **visual**, and **audio-visual** speech recognition. One model, three modalities.
+A unified model for **audio**, **visual**, and **audio-visual** speech recognition.
 
 <p align="center">
   <a href="#installation">Installation</a> &bull;
@@ -13,6 +13,14 @@ A unified model for **audio**, **visual**, and **audio-visual** speech recogniti
   <a href="#citation">Citation</a>
 </p>
 
+<table align="center">
+<tr>
+<td valign="middle"><img src="assets/demo.gif" width="150"></td>
+<td valign="middle"><img src="assets/arrow.svg" width="50"></td>
+<td valign="middle"><h3>"WE DON'T USE VIDEO, WE DON'T USE AUDIO"</h3></td>
+</tr>
+</table>
+
 ---
 
 ## Installation
@@ -21,11 +29,30 @@ A unified model for **audio**, **visual**, and **audio-visual** speech recogniti
 pip install -r requirements.txt
 ```
 
+### Face landmark detector
+
+A face landmark detector is required for mouth cropping (used by `demo.py`, `extract_features.py`, and `preprocessing/extract_mouths.py`). Two backends are supported:
+
+**Option A: MediaPipe (recommended — simple pip install)**
+```bash
+pip install mediapipe
+```
+
+**Option B: ibug RetinaFace + FAN (original, higher accuracy)**
+
+The ibug packages are not on PyPI and must be installed from source. A helper script is provided:
+```bash
+bash preprocessing/setup_ibug.sh
+```
+This clones and installs [ibug face_detection](https://github.com/hhj1897/face_detection) and [ibug face_alignment](https://github.com/hhj1897/face_alignment). Requires `git-lfs`.
+
 ---
 
 ## Transcribe a Video
 
-Give it a video. Get a transcription. Face detection and mouth cropping are automatic.
+Run `demo.py` to transcribe a video. Face detection and mouth cropping are handled automatically.
+
+Download a pretrained model before running. The [Huge (high-resource)](https://drive.google.com/file/d/1LzFOTYu45zCLOHGVLQt7pMGjw6jmmo9Y/view?usp=sharing) checkpoint is recommended for best accuracy. For a lighter alternative, use [Base+ (high-resource)](https://drive.google.com/file/d/18vmJjdem5XPOA8bmizybIW5sLJuHMdRR/view?usp=sharing). See [Pretrained Models](#pretrained-models) for all options.
 
 ```bash
 python demo.py \
@@ -144,7 +171,6 @@ python main.py ... decode.beam_size=1 decode.ctc_weight=0.0
 | `decode.beam_size` | 40 | Beam search width |
 | `decode.ctc_weight` | 0.1 | CTC weight (0.0 = pure attention) |
 | `decode.maxlenratio` | 1.0 | Max output length ratio |
-| `decode.lm_weight` | 0.0 | Language model weight |
 
 </details>
 
@@ -247,7 +273,17 @@ Test CSVs:
 
 ### 2. Extract mouth ROIs
 
+Install a [face landmark detector](#face-landmark-detector) if you haven't already, then:
+
 ```bash
+# Using mediapipe (no extra install beyond pip)
+python preprocessing/extract_mouths.py \
+  --src_dir /path/to/raw/videos \
+  --tgt_dir /path/to/mouth/videos \
+  --landmarks_dir /path/to/landmarks \
+  --detector mediapipe
+
+# Using ibug retinaface (default, requires setup_ibug.sh)
 python preprocessing/extract_mouths.py \
   --src_dir /path/to/raw/videos \
   --tgt_dir /path/to/mouth/videos \

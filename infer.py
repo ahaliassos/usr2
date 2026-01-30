@@ -18,7 +18,6 @@ from data.transforms import NormalizeVideo, AddNoise
 from espnet.asr.asr_utils import add_results_to_json, torch_load
 from espnet.nets.batch_beam_search import BatchBeamSearch
 from espnet.nets.pytorch_backend.e2e_asr_transformer import E2E
-from espnet.nets.pytorch_backend.lm.transformer import TransformerLM
 from espnet.nets.pytorch_backend.nets_utils import make_non_pad_mask
 from espnet.nets.scorers.length_bonus import LengthBonus
 from preprocessing.landmarks_detector import LandmarksDetector
@@ -52,13 +51,11 @@ def get_beam_search(cfg, model):
 
     scorers = model.scorers()
 
-    scorers["lm"] = None
     scorers["length_bonus"] = LengthBonus(len(token_list))
 
     weights = dict(
         decoder=1.0 - cfg.decode.ctc_weight,
         ctc=cfg.decode.ctc_weight,
-        lm=cfg.decode.lm_weight,
         length_bonus=cfg.decode.penalty,
     )
     beam_search = BatchBeamSearch(

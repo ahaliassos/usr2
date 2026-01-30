@@ -36,6 +36,13 @@ def load_args():
         type=int,
         help="window margin for smoothed landmarks",
     )
+    parser.add_argument(
+        "--detector",
+        default="retinaface",
+        choices=["retinaface", "mediapipe"],
+        help="landmark detector backend: 'retinaface' (ibug, needs setup_ibug.sh) "
+             "or 'mediapipe' (pip install mediapipe)",
+    )
 
     args = parser.parse_args()
     return args

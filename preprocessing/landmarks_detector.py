@@ -6,26 +6,35 @@
 
 import warnings
 
-from ibug.face_alignment import FANPredictor
-from ibug.face_detection import RetinaFacePredictor
+import numpy as np
 
 warnings.filterwarnings("ignore")
 
 
-class LandmarksDetector:
-    def __init__(self, device="cuda:0", model_name="resnet50"):
-        self.face_detector = RetinaFacePredictor(
-            device=device,
-            threshold=0.8,
-            model=RetinaFacePredictor.get_model(model_name),
+def _build_ibug_detector(device, model_name):
+    """Build detector using ibug packages (requires manual install via setup_ibug.sh)."""
+    try:
+        from ibug.face_alignment import FANPredictor
+        from ibug.face_detection import RetinaFacePredictor
+    except ImportError:
+        raise ImportError(
+            "ibug packages not found. Install them by running:\n"
+            "  bash preprocessing/setup_ibug.sh\n"
+            "Or use --detector=mediapipe instead (pip install mediapipe)."
         )
-        self.landmark_detector = FANPredictor(device=device, model=None)
 
-    def __call__(self, video_frames):
+    face_detector = RetinaFacePredictor(
+        device=device,
+        threshold=0.8,
+        model=RetinaFacePredictor.get_model(model_name),
+    )
+    landmark_detector = FANPredictor(device=device, model=None)
+
+    def detect(video_frames):
         landmarks = []
         for frame in video_frames:
-            detected_faces = self.face_detector(frame, rgb=False)
-            face_points, _ = self.landmark_detector(frame, detected_faces, rgb=True)
+            detected_faces = face_detector(frame, rgb=False)
+            face_points, _ = landmark_detector(frame, detected_faces, rgb=True)
             if len(detected_faces) == 0:
                 landmarks.append(None)
             else:
@@ -36,3 +45,94 @@ class LandmarksDetector:
                         max_id, max_size = idx, bbox_size
                 landmarks.append(face_points[max_id])
         return landmarks
+
+    return detect
+
+
+def _build_mediapipe_detector():
+    """Build detector using MediaPipe (pip install mediapipe)."""
+    import os
+    try:
+        import mediapipe as mp
+    except ImportError:
+        raise ImportError(
+            "mediapipe not found. Install it with:\n"
+            "  pip install mediapipe"
+        )
+
+    from mediapipe.tasks.python.vision import FaceLandmarker, FaceLandmarkerOptions
+    from mediapipe.tasks.python import BaseOptions
+    import mediapipe as mp
+
+    # MediaPipe FaceMesh produces 478 landmarks; we map a subset to the
+    # 68-point scheme expected by the downstream mouth-cropping pipeline.
+    # Mapping from: https://github.com/google/mediapipe/issues/1615
+    _MP_TO_68 = [
+        162, 234, 93, 58, 172, 136, 149, 148, 152, 377, 378, 365, 397, 288,
+        323, 454, 389,  # jaw 0-16
+        70, 63, 105, 66, 107,  # left eyebrow 17-21
+        336, 296, 334, 293, 301,  # right eyebrow 22-26
+        168, 197, 5, 4, 75,  # nose bridge 27-30  (approx)
+        97, 2, 326, 305,  # nose bottom 31-34  (approx)
+        33, 160, 158, 133, 153, 144,  # left eye 36-41
+        362, 385, 387, 263, 373, 380,  # right eye 42-47
+        61, 39, 37, 0, 267, 269, 291,  # outer lip top 48-54
+        321, 314, 17, 84, 91,  # outer lip bottom 55-59
+        78, 82, 13, 312, 308,  # inner lip top 60-64
+        317, 14, 87,  # inner lip bottom 65-67
+    ]
+
+    model_path = os.path.join(os.path.dirname(__file__), "face_landmarker.task")
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"MediaPipe model not found at {model_path}. Download it with:\n"
+            "  wget -O preprocessing/face_landmarker.task "
+            "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+        )
+
+    options = FaceLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path=model_path),
+        num_faces=1,
+        min_face_detection_confidence=0.5,
+    )
+    face_landmarker = FaceLandmarker.create_from_options(options)
+
+    def detect(video_frames):
+        import cv2
+        landmarks = []
+        for frame in video_frames:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w = frame.shape[:2]
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            results = face_landmarker.detect(mp_image)
+            if not results.face_landmarks:
+                landmarks.append(None)
+            else:
+                face_lm = results.face_landmarks[0]
+                pts = np.array(
+                    [(face_lm[i].x * w, face_lm[i].y * h)
+                     for i in _MP_TO_68],
+                    dtype=np.float32,
+                )
+                landmarks.append(pts)
+        return landmarks
+
+    return detect
+
+
+class LandmarksDetector:
+    def __init__(self, device="cuda:0", model_name="resnet50", detector="retinaface"):
+        """
+        Args:
+            device: torch device string (used by ibug backend only).
+            model_name: RetinaFace model name (used by ibug backend only).
+            detector: "retinaface" (ibug, requires setup_ibug.sh) or
+                      "mediapipe" (pip install mediapipe).
+        """
+        if detector == "mediapipe":
+            self._detect = _build_mediapipe_detector()
+        else:
+            self._detect = _build_ibug_detector(device, model_name)
+
+    def __call__(self, video_frames):
+        return self._detect(video_frames)
