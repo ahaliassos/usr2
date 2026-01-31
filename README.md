@@ -290,7 +290,7 @@ python preprocessing/extract_mouths.py \
   --landmarks_dir /path/to/landmarks
 ```
 
-Pre-computed landmarks can be downloaded from the [Visual Speech Recognition repo](https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages/blob/master/models/README.md).
+Pre-computed landmarks for LRS2 and LRS3 can be downloaded from the [Visual Speech Recognition repo](https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages/tree/master).
 
 ### 3. Download test CSVs
 

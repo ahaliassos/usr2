@@ -7,7 +7,7 @@ import numpy as np
 from espnet.nets.pytorch_backend.backbones.modules.resnet import ResNet
 from espnet.nets.pytorch_backend.backbones.modules.resnet import BasicBlock
 from espnet.nets.pytorch_backend.backbones.modules.shufflenetv2 import ShuffleNetV2
-from espnet.nets.pytorch_backend.transformer.convolution import Swish
+Swish = nn.SiLU
 
 
 # -- auxiliary functions

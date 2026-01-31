@@ -31,18 +31,3 @@ class LayerNorm(torch.nn.LayerNorm):
         if self.dim == -1:
             return super(LayerNorm, self).forward(x)
         return super(LayerNorm, self).forward(x.transpose(1, -1)).transpose(1, -1)
-
-
-class InstanceNorm(torch.nn.InstanceNorm1d):
-    def forward(self, x):
-        return super(InstanceNorm, self).forward(x.transpose(-2, -1)).transpose(-2, -1)
-
-
-class MAENorm(torch.nn.Module):
-    def __init__(self):
-        super(MAENorm, self).__init__()
-
-    def forward(self, x):
-        mean = x.mean(dim=-1, keepdim=True)
-        var = x.var(dim=-1, keepdim=True)
-        return (x - mean) / (var + 1.e-6)**.5

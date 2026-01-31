@@ -248,11 +248,11 @@ def transcribe(video_path: str, cfg: DictConfig, modality: str = "av",
 
     modality_key = modality[0].lower() if modality not in ("a", "v", "av") else modality
     if modality_key == "av":
-        feat, _, _ = model.encoder.forward_single(xs_v=video_input, xs_a=audio_input)
+        feat = model.encoder(xs_v=video_input, xs_a=audio_input)
     elif modality_key == "v":
-        feat, _, _ = model.encoder.forward_single(xs_v=video_input)
+        feat = model.encoder(xs_v=video_input)
     elif modality_key == "a":
-        feat, _, _ = model.encoder.forward_single(xs_a=audio_input)
+        feat = model.encoder(xs_a=audio_input)
     else:
         raise ValueError(f"Unknown modality '{modality}'. Choose from: av, video (v), audio (a).")
 

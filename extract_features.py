@@ -63,17 +63,17 @@ def extract(video_path: str, cfg: DictConfig, modality: str = "av",
     modality = modality.lower()
 
     if modality in ("av", "all"):
-        feat_v, _, _ = model.encoder.forward_single(xs_v=video_input)
-        feat_a, _, _ = model.encoder.forward_single(xs_a=audio_input)
-        feat_av, _, _ = model.encoder.forward_single(xs_v=video_input, xs_a=audio_input)
+        feat_v = model.encoder(xs_v=video_input)
+        feat_a = model.encoder(xs_a=audio_input)
+        feat_av = model.encoder(xs_v=video_input, xs_a=audio_input)
         features["video"] = feat_v.squeeze(0).cpu().numpy()
         features["audio"] = feat_a.squeeze(0).cpu().numpy()
         features["audio_visual"] = feat_av.squeeze(0).cpu().numpy()
     elif modality == "v" or modality == "video":
-        feat, _, _ = model.encoder.forward_single(xs_v=video_input)
+        feat = model.encoder(xs_v=video_input)
         features["video"] = feat.squeeze(0).cpu().numpy()
     elif modality == "a" or modality == "audio":
-        feat, _, _ = model.encoder.forward_single(xs_a=audio_input)
+        feat = model.encoder(xs_a=audio_input)
         features["audio"] = feat.squeeze(0).cpu().numpy()
     else:
         raise ValueError(f"Unknown modality '{modality}'.")

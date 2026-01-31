@@ -37,28 +37,3 @@ def subsequent_mask(size, device="cpu", dtype=datatype):
         ret = torch.ones(size, size, device=device, dtype=dtype)
         return torch.tril(ret, out=ret)
 
-
-def target_mask(ys_in_pad, ignore_id):
-    """Create mask for decoder self-attention.
-
-    :param torch.Tensor ys_pad: batch of padded target sequences (B, Lmax)
-    :param int ignore_id: index of padding
-    :param torch.dtype dtype: result dtype
-    :rtype: torch.Tensor
-    """
-    ys_mask = ys_in_pad != ignore_id
-    m = subsequent_mask(ys_mask.size(-1), device=ys_mask.device).unsqueeze(0)
-    return ys_mask.unsqueeze(-2) & m
-
-
-def target_mask_cont(ys_in):
-    """Create mask for decoder self-attention.
-
-    :param torch.Tensor ys_pad: batch of padded target sequences (B, Lmax)
-    :param int ignore_id: index of padding
-    :param torch.dtype dtype: result dtype
-    :rtype: torch.Tensor
-    """
-    ys_mask = torch.ones(ys_in.shape[:2], dtype=torch.bool, device=ys_in.device)
-    m = subsequent_mask(ys_mask.size(-1), device=ys_mask.device).unsqueeze(0)
-    return ys_mask.unsqueeze(-2) & m

@@ -14,8 +14,6 @@ project_name: usr2
 num_workers: 4
 log_wandb: False
 compile_model: True
-fix_seed: True
-matmul_precision: highest
 gpus:
 video:
 modality: av

@@ -22,23 +22,9 @@ class DecoderLayer(nn.Module):
     :param espnet.nets.pytorch_backend.transformer.positionwise_feed_forward.
         PositionwiseFeedForward feed_forward: feed forward layer module
     :param float dropout_rate: dropout rate
-    :param bool normalize_before: whether to use layer_norm before the first block
-    :param bool concat_after: whether to concat attention layer's input and output
-        if True, additional linear will be applied.
-        i.e. x -> x + linear(concat(x, att(x)))
-        if False, no additional linear will be applied. i.e. x -> x + att(x)
     """
 
-    def __init__(
-        self,
-        size,
-        self_attn,
-        src_attn,
-        feed_forward,
-        dropout_rate,
-        normalize_before=True,
-        concat_after=False,
-    ):
+    def __init__(self, size, self_attn, src_attn, feed_forward, dropout_rate):
         """Construct an DecoderLayer object."""
         super(DecoderLayer, self).__init__()
         self.size = size
@@ -49,11 +35,6 @@ class DecoderLayer(nn.Module):
         self.norm2 = LayerNorm(size)
         self.norm3 = LayerNorm(size)
         self.dropout = nn.Dropout(dropout_rate)
-        self.normalize_before = normalize_before
-        self.concat_after = concat_after
-        if self.concat_after:
-            self.concat_linear1 = nn.Linear(size + size, size)
-            self.concat_linear2 = nn.Linear(size + size, size)
 
     def forward(self, tgt, tgt_mask, memory, memory_mask, cache=None):
         """Compute decoded features.
@@ -66,8 +47,7 @@ class DecoderLayer(nn.Module):
             cache (torch.Tensor): cached output (batch, max_time_out-1, size)
         """
         residual = tgt
-        if self.normalize_before:
-            tgt = self.norm1(tgt)
+        tgt = self.norm1(tgt)
 
         if cache is None:
             tgt_q = tgt
@@ -85,38 +65,15 @@ class DecoderLayer(nn.Module):
             if tgt_mask is not None:
                 tgt_q_mask = tgt_mask[:, -1:, :]
 
-        if self.concat_after:
-            tgt_concat = torch.cat(
-                (tgt_q, self.self_attn(tgt_q, tgt, tgt, tgt_q_mask)), dim=-1
-            )
-            x = residual + self.concat_linear1(tgt_concat)
-        else:
-            self_feats = self.dropout(self.self_attn(tgt_q, tgt, tgt, tgt_q_mask))
-            x = residual + self_feats 
-        if not self.normalize_before:
-            x = self.norm1(x)
+        x = residual + self.dropout(self.self_attn(tgt_q, tgt, tgt, tgt_q_mask))
 
         residual = x
-        if self.normalize_before:
-            x = self.norm2(x)
-        if self.concat_after:
-            x_concat = torch.cat(
-                (x, self.src_attn(x, memory, memory, memory_mask)), dim=-1
-            )
-            x = residual + self.concat_linear2(x_concat)
-        else:
-            cross_feats = self.dropout(self.src_attn(x, memory, memory, memory_mask))
-            x = residual + cross_feats  
-        if not self.normalize_before:
-            x = self.norm2(x)
+        x = self.norm2(x)
+        x = residual + self.dropout(self.src_attn(x, memory, memory, memory_mask))
 
         residual = x
-        if self.normalize_before:
-            x = self.norm3(x)
-        ffn_feats = self.dropout(self.feed_forward(x))
-        x = residual + ffn_feats 
-        if not self.normalize_before:
-            x = self.norm3(x)
+        x = self.norm3(x)
+        x = residual + self.dropout(self.feed_forward(x))
 
         if cache is not None:
             x = torch.cat([cache, x], dim=1)

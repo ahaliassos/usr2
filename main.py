@@ -14,12 +14,7 @@ logging.getLogger("lightning").propagate = False
 
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg):
-    if cfg.fix_seed:
-        seed_everything(42, workers=True)
-
     cfg.gpus = torch.cuda.device_count()
-
-    torch.set_float32_matmul_precision(precision=cfg.matmul_precision)
 
     wandb_logger = None
     if cfg.log_wandb:

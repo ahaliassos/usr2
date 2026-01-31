@@ -40,21 +40,16 @@ def _pre_hook(
 
 class Decoder(BatchScorerInterface, torch.nn.Module):
     """Transfomer decoder module.
-    :param int odim: output dim
+    :param int idim: input/vocab dim
     :param int attention_dim: dimention of attention
     :param int attention_heads: the number of heads of multi head attention
     :param int linear_units: the number of units of position-wise feed forward
     :param int num_blocks: the number of decoder blocks
     :param float dropout_rate: dropout rate
-    :param float attention_dropout_rate: dropout rate for attention
-    :param str or torch.nn.Module input_layer: input layer type
-    :param bool use_output_layer: whether to use output layer
-    :param class pos_enc_class: PositionalEncoding or ScaledPositionalEncoding
-    :param bool normalize_before: whether to use layer_norm before the first block
-    :param bool concat_after: whether to concat attention layer's input and output
-        if True, additional linear will be applied.
-        i.e. x -> x + linear(concat(x, att(x)))
-        if False, no additional linear will be applied. i.e. x -> x + att(x)
+    :param float positional_dropout_rate: dropout rate for positional encoding
+    :param float self_attention_dropout_rate: dropout rate for self attention
+    :param float src_attention_dropout_rate: dropout rate for source attention
+    :param torch.nn.Module proj_decoder: optional projection applied to encoder memory
     """
 
     def __init__(
@@ -68,44 +63,16 @@ class Decoder(BatchScorerInterface, torch.nn.Module):
         positional_dropout_rate=0.1,
         self_attention_dropout_rate=0.0,
         src_attention_dropout_rate=0.0,
-        input_layer="embed",
-        pos_enc_class=PositionalEncoding,
-        normalize_before=True,
-        concat_after=False,
-        avg_branches=False,
-        odim=None,
-        soft_inputs=False,
         proj_decoder=None,
     ):
-        """Construct an Decoder object."""
+        """Construct a Decoder object."""
         torch.nn.Module.__init__(self)
         self._register_load_state_dict_pre_hook(_pre_hook)
 
-        if input_layer == "embed":
-            self.embed = torch.nn.Sequential(
-                torch.nn.Embedding(idim, attention_dim),
-                pos_enc_class(attention_dim, positional_dropout_rate),
-            )
-        elif input_layer == "vanilla_linear":
-            self.embed = torch.nn.Sequential(
-                torch.nn.Linear(idim, attention_dim),
-                pos_enc_class(attention_dim, positional_dropout_rate),
-            )
-        elif input_layer == "linear":
-            self.embed = torch.nn.Sequential(
-                torch.nn.Linear(idim, attention_dim),
-                torch.nn.LayerNorm(attention_dim),
-                torch.nn.Dropout(dropout_rate),
-                torch.nn.ReLU(),
-                pos_enc_class(attention_dim, positional_dropout_rate),
-            )
-        elif isinstance(input_layer, torch.nn.Module):
-            self.embed = torch.nn.Sequential(
-                input_layer, pos_enc_class(attention_dim, positional_dropout_rate)
-            )
-        else:
-            raise NotImplementedError("only `embed` or torch.nn.Module is supported.")
-        self.normalize_before = normalize_before
+        self.embed = torch.nn.Sequential(
+            torch.nn.Embedding(idim, attention_dim),
+            PositionalEncoding(attention_dim, positional_dropout_rate),
+        )
         self.decoders = repeat(
             num_blocks,
             lambda: DecoderLayer(
@@ -118,19 +85,11 @@ class Decoder(BatchScorerInterface, torch.nn.Module):
                 ),
                 PositionwiseFeedForward(attention_dim, linear_units, dropout_rate),
                 dropout_rate,
-                normalize_before,
-                concat_after,
             ),
         )
-        if self.normalize_before:
-            self.after_norm = LayerNorm(attention_dim)
-        if odim:
-            self.output_layer = torch.nn.Linear(attention_dim, odim)
-        else:
-            self.output_layer = None
-        
+        self.after_norm = LayerNorm(attention_dim)
+
         self.adim = attention_dim
-        self.soft_inputs = soft_inputs
 
         self.out_layer_v = torch.nn.Linear(attention_dim, idim)
         self.out_layer_a = torch.nn.Linear(attention_dim, idim)
@@ -140,67 +99,41 @@ class Decoder(BatchScorerInterface, torch.nn.Module):
 
         self.apply(self._init_weights)
 
-    def forward(self, tgt, tgt_mask, memory, memory_mask, ignore_soft=False):
+    def forward(self, tgt, tgt_mask, memory, memory_mask):
         """Forward decoder.
         :param torch.Tensor tgt: input token ids, int64 (batch, maxlen_out)
-                                 if input_layer == "embed"
-                                 input tensor (batch, maxlen_out, #mels)
-                                 in the other cases
         :param torch.Tensor tgt_mask: input token mask,  (batch, maxlen_out)
-                                      dtype=torch.uint8 in PyTorch 1.2-
-                                      dtype=torch.bool in PyTorch 1.2+ (include 1.2)
         :param torch.Tensor memory: encoded memory, float32  (batch, maxlen_in, feat)
         :param torch.Tensor memory_mask: encoded memory mask,  (batch, maxlen_in)
-                                         dtype=torch.uint8 in PyTorch 1.2-
-                                         dtype=torch.bool in PyTorch 1.2+ (include 1.2)
         :return x: decoded token score before softmax (batch, maxlen_out, token)
-                   if use_output_layer is True,
-                   final block outputs (batch, maxlen_out, attention_dim)
-                   in the other cases
         :rtype: torch.Tensor
         :return tgt_mask: score mask before softmax (batch, maxlen_out)
         :rtype: torch.Tensor
         """
-
         if self.proj_decoder:
             memory = self.proj_decoder(memory)
 
-        if self.soft_inputs and not ignore_soft:
-            tgt = torch.einsum('ijk,kl->ijl', tgt.softmax(dim=-1), self.embed[0].weight)
-        else:
-            tgt = self.embed[0](tgt)
-        x = self.embed[1](tgt)
+        x = self.embed(tgt)
         x, tgt_mask, memory, memory_mask = self.decoders(
             x, tgt_mask, memory, memory_mask
         )
-        if self.normalize_before:
-            x = self.after_norm(x)
-        if self.output_layer is not None:
-            x = self.output_layer(x)
+        x = self.after_norm(x)
         return x, tgt_mask
 
     def forward_one_step(self, tgt, tgt_mask, memory, memory_mask=None, cache=None):
         """Forward one step.
         :param torch.Tensor tgt: input token ids, int64 (batch, maxlen_out)
         :param torch.Tensor tgt_mask: input token mask,  (batch, maxlen_out)
-                                      dtype=torch.uint8 in PyTorch 1.2-
-                                      dtype=torch.bool in PyTorch 1.2+ (include 1.2)
         :param torch.Tensor memory: encoded memory, float32  (batch, maxlen_in, feat)
         :param List[torch.Tensor] cache:
             cached output list of (batch, max_time_out-1, size)
         :return y, cache: NN output value and cache per `self.decoders`.
-            `y.shape` is (batch, maxlen_out, token)
         :rtype: Tuple[torch.Tensor, List[torch.Tensor]]
-        """       
-
+        """
         if self.proj_decoder:
             memory = self.proj_decoder(memory)
 
-        if self.soft_inputs:
-            tgt = torch.einsum('ijk,kl->ijl', tgt.softmax(dim=-1), self.embed[0].weight)
-        else:
-            tgt = self.embed[0](tgt)     
-        x = self.embed[1](tgt)
+        x = self.embed(tgt)
         if cache is None:
             cache = [None] * len(self.decoders)
         new_cache = []
@@ -210,13 +143,7 @@ class Decoder(BatchScorerInterface, torch.nn.Module):
             )
             new_cache.append(x)
 
-        if self.normalize_before:
-            y = self.after_norm(x[:, -1])
-        else:
-            y = x[:, -1]
-        if self.output_layer is not None:
-            y = self.output_layer(y)
-
+        y = self.after_norm(x[:, -1])
         return y, new_cache
 
     # beam search API (see ScorerInterface)
@@ -281,9 +208,5 @@ class Decoder(BatchScorerInterface, torch.nn.Module):
 
     def _init_weights(self, m):
         if isinstance(m, torch.nn.Linear):
-            # trunc_normal_(m.weight, std=.02)
             if m.bias is not None:
                 torch.nn.init.constant_(m.bias, 0)
-        # elif isinstance(m, torch.nn.LayerNorm):
-        #     torch.nn.init.constant_(m.bias, 0)
-        #     nn.init.constant_(m.weight, 1.0)
