@@ -33,7 +33,7 @@ def _build_ibug_detector(device, model_name):
     def detect(video_frames):
         landmarks = []
         for frame in video_frames:
-            detected_faces = face_detector(frame, rgb=False)
+            detected_faces = face_detector(frame, rgb=True)
             face_points, _ = landmark_detector(frame, detected_faces, rgb=True)
             if len(detected_faces) == 0:
                 landmarks.append(None)
@@ -98,12 +98,11 @@ def _build_mediapipe_detector():
     face_landmarker = FaceLandmarker.create_from_options(options)
 
     def detect(video_frames):
-        import cv2
         landmarks = []
         for frame in video_frames:
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Frames from torchvision.io.read_video are already RGB
             h, w = frame.shape[:2]
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
             results = face_landmarker.detect(mp_image)
             if not results.face_landmarks:
                 landmarks.append(None)

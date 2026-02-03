@@ -21,7 +21,7 @@ class MultiHeadedAttention(nn.Module):
         dropout_rate (float): Dropout rate.
     """
 
-    def __init__(self, n_head, n_feat, dropout_rate, alibi=None, n_in=None):
+    def __init__(self, n_head, n_feat, dropout_rate, n_in=None):
         """Construct an MultiHeadedAttention object."""
         super(MultiHeadedAttention, self).__init__()
         if n_in is None:
@@ -35,9 +35,7 @@ class MultiHeadedAttention(nn.Module):
         self.linear_v = nn.Linear(n_in, n_feat)
         self.linear_out = nn.Linear(n_feat, n_feat)
         self.attn = None
-        self.dropout = nn.Dropout(p=dropout_rate)
-
-        self.alibi =  alibi            
+        self.dropout = nn.Dropout(p=dropout_rate)            
 
     def forward_qkv(self, query, key, value):
         """Transform query, key and value.
@@ -94,7 +92,7 @@ class MultiHeadedAttention(nn.Module):
             return self.linear_out(x), self.attn
         return self.linear_out(x)  # (batch, time1, d_model)
 
-    def forward(self, query, key, value, mask, bias=None, rtn_attn=False):
+    def forward(self, query, key, value, mask, rtn_attn=False):
         """Compute scaled dot product attention.
         Args:
             query (torch.Tensor): Query tensor (#batch, time1, size).
@@ -108,8 +106,6 @@ class MultiHeadedAttention(nn.Module):
         """
         q, k, v = self.forward_qkv(query, key, value)
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.d_k)
-        if self.alibi:
-            scores = self.alibi(scores, bias)
         return self.forward_attention(v, scores, mask, rtn_attn)
 
 
