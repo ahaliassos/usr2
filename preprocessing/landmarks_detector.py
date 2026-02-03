@@ -49,20 +49,8 @@ def _build_ibug_detector(device, model_name):
     return detect
 
 
-def _build_mediapipe_detector():
-    """Build detector using MediaPipe (pip install mediapipe)."""
-    import os
-    try:
-        import mediapipe as mp
-    except ImportError:
-        raise ImportError(
-            "mediapipe not found. Install it with:\n"
-            "  pip install mediapipe"
-        )
-
-    from mediapipe.tasks.python.vision import FaceLandmarker, FaceLandmarkerOptions
-    from mediapipe.tasks.python import BaseOptions
-    import mediapipe as mp
+class _MediaPipeDetector:
+    """Wrapper for MediaPipe FaceLandmarker with proper cleanup."""
 
     # MediaPipe FaceMesh produces 478 landmarks; we map a subset to the
     # 68-point scheme expected by the downstream mouth-cropping pipeline.
@@ -82,41 +70,65 @@ def _build_mediapipe_detector():
         317, 14, 87,  # inner lip bottom 65-67
     ]
 
-    model_path = os.path.join(os.path.dirname(__file__), "face_landmarker.task")
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(
-            f"MediaPipe model not found at {model_path}. Download it with:\n"
-            "  wget -O preprocessing/face_landmarker.task "
-            "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+    def __init__(self):
+        import os
+        try:
+            import mediapipe as mp
+        except ImportError:
+            raise ImportError(
+                "mediapipe not found. Install it with:\n"
+                "  pip install mediapipe"
+            )
+
+        from mediapipe.tasks.python.vision import FaceLandmarker, FaceLandmarkerOptions
+        from mediapipe.tasks.python import BaseOptions
+
+        self._mp = mp
+
+        model_path = os.path.join(os.path.dirname(__file__), "face_landmarker.task")
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(
+                f"MediaPipe model not found at {model_path}. Download it with:\n"
+                "  wget -O preprocessing/face_landmarker.task "
+                "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+            )
+
+        options = FaceLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=model_path),
+            num_faces=1,
+            min_face_detection_confidence=0.5,
         )
+        self._landmarker = FaceLandmarker.create_from_options(options)
 
-    options = FaceLandmarkerOptions(
-        base_options=BaseOptions(model_asset_path=model_path),
-        num_faces=1,
-        min_face_detection_confidence=0.5,
-    )
-    face_landmarker = FaceLandmarker.create_from_options(options)
-
-    def detect(video_frames):
+    def __call__(self, video_frames):
         landmarks = []
         for frame in video_frames:
             # Frames from torchvision.io.read_video are already RGB
             h, w = frame.shape[:2]
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
-            results = face_landmarker.detect(mp_image)
+            mp_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=frame)
+            results = self._landmarker.detect(mp_image)
             if not results.face_landmarks:
                 landmarks.append(None)
             else:
                 face_lm = results.face_landmarks[0]
                 pts = np.array(
                     [(face_lm[i].x * w, face_lm[i].y * h)
-                     for i in _MP_TO_68],
+                     for i in self._MP_TO_68],
                     dtype=np.float32,
                 )
                 landmarks.append(pts)
         return landmarks
 
-    return detect
+    def close(self):
+        """Explicitly close the MediaPipe landmarker to avoid shutdown errors."""
+        if self._landmarker is not None:
+            self._landmarker.close()
+            self._landmarker = None
+
+
+def _build_mediapipe_detector():
+    """Build detector using MediaPipe (pip install mediapipe)."""
+    return _MediaPipeDetector()
 
 
 class LandmarksDetector:
@@ -135,3 +147,8 @@ class LandmarksDetector:
 
     def __call__(self, video_frames):
         return self._detect(video_frames)
+
+    def close(self):
+        """Release resources. Call this when done to avoid shutdown errors."""
+        if hasattr(self._detect, "close"):
+            self._detect.close()

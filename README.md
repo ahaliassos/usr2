@@ -4,6 +4,8 @@
 
 A unified model for **audio**, **visual**, and **audio-visual** speech recognition.
 
+**Training paradigm:** USR 2.0 uses self-supervised pre-training followed by semi-supervised fine-tuning. We provide both the [self-supervised checkpoints](#self-supervised-encoder-only) (for extracting representations for your own downstream tasks) and the [fine-tuned checkpoints](#fine-tuned-full-model) (for speech recognition). See [Extract Encoder Features](#extract-encoder-features) for details on using either type.
+
 <p align="center">
   <a href="#installation">Installation</a> &bull;
   <a href="#transcribe-a-video">Demo</a> &bull;
@@ -95,13 +97,27 @@ Any [Hydra](https://hydra.cc/) override works. For example, to change beam size:
 
 ## Extract Encoder Features
 
-Extract learned representations for downstream tasks.
+Extract learned audio-visual representations for your own downstream tasks (e.g., emotion recognition, speaker verification, audio-visual synchronization).
+
+While `demo.py` uses the full model (encoder + decoder) for transcription, `extract_features.py` outputs only the encoder representations.
+
+You can extract features from two types of checkpoints:
+- **Fine-tuned models** (self-supervised + semi-supervised): Best for tasks that benefit from supervised speech knowledge
+- **Self-supervised models**: Pure self-supervised representations, useful if you want to fine-tune on a task that requires more general knowledge.
+
+See [Pretrained Models](#pretrained-models) for download links.
 
 ```bash
-# All modalities (saves video, audio, and audio_visual features)
+# Using a fine-tuned checkpoint
 python extract_features.py \
   video=path/to/video.mp4 \
-  model.pretrained_model_path=path/to/checkpoint.pth \
+  model.pretrained_model_path=path/to/finetuned_checkpoint.pth \
+  output=features.pt
+
+# Using a self-supervised checkpoint
+python extract_features.py \
+  video=path/to/video.mp4 \
+  model.pretrained_model_path=path/to/selfsup_checkpoint.pth \
   output=features.pt
 
 # Single modality
@@ -125,6 +141,21 @@ features["audio"]          # audio encoder output
 ---
 
 ## Pretrained Models
+
+### Self-supervised (encoder only)
+
+These are self-supervised pre-trained checkpoints from [USR](https://github.com/ahaliassos/usr). Use these if you want to extract representations without any supervised fine-tuning, e.g., to fine-tune for your own downstream task.
+
+| Model | Data | Download |
+|:------|:-----|:---------|
+| Base | LRS3 | [checkpoint](https://drive.google.com/file/d/1AZ3JT8zubow-oZ5LJUrMd97GLWmAKfK0/view?usp=sharing) |
+| Base+ | LRS3+Vox2 | [checkpoint](https://drive.google.com/file/d/1wCxpChDQySPraGICZ9QCW9Nzo-EYtX-g/view?usp=sharing) |
+| Large | LRS3+Vox2 | [checkpoint](https://drive.google.com/file/d/18dBUcP9XvRIVZmDw8XTpxD8DKReTpOSI/view?usp=sharing) |
+| Huge | LRS2+LRS3+Vox2+AVS | [checkpoint](https://drive.google.com/file/d/1KARf06-70SpI6kkHfoaaiDksL-1M_ojy/view?usp=sharing) |
+
+### Fine-tuned (full model)
+
+These checkpoints have been fine-tuned with semi-supervised learning for speech recognition. Use these for transcription (`demo.py`) or to extract features that include supervised speech knowledge.
 
 ### Low-resource
 

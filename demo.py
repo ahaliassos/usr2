@@ -59,6 +59,9 @@ def load_video_audio(path: str, target_fps: int = 25, target_sr: int = 16000):
     video : np.ndarray, uint8, (T, H, W, C) RGB
     audio : torch.Tensor, float32, (1, S)  mono waveform at ``target_sr``
     """
+    import os
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Video file not found: {path}")
     video, audio, info = torchvision.io.read_video(path, pts_unit="sec")
     # video: (T, H, W, C) uint8   audio: (C, S) float
 
@@ -244,6 +247,7 @@ def transcribe(video_path: str, cfg: DictConfig, modality: str = "av",
     ld = LandmarksDetector(detector=detector, device=str(device))
     vp = VideoProcess(convert_gray=False)
     video_tensor = preprocess_video(video_frames, ld, vp)
+    ld.close()  # Explicitly close to avoid Python 3.13+ shutdown errors
 
     # --- model ---------------------------------------------------------------
     log.info("Loading model from: %s", cfg.model.pretrained_model_path)
