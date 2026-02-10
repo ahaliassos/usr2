@@ -43,13 +43,14 @@ OmegaConf.register_new_resolver("len", len, replace=True)
 
 @torch.no_grad()
 def extract(video_path: str, cfg: DictConfig, modality: str = "av",
-            device: torch.device = torch.device("cuda")):
+            device: torch.device = torch.device("cuda"),
+            detector: str = "mediapipe"):
     """Extract encoder features and return a dict of numpy arrays."""
 
     video_frames, audio = load_video_audio(video_path)
 
     log.info("Detecting landmarks and cropping mouth region ...")
-    ld = LandmarksDetector()
+    ld = LandmarksDetector(detector=detector)
     vp = VideoProcess(convert_gray=False)
     video_tensor = preprocess_video(video_frames, ld, vp)
     ld.close()  # Explicitly close to avoid Python 3.13+ shutdown errors
@@ -96,8 +97,11 @@ def main(cfg: DictConfig):
         print("Error: model.pretrained_model_path=path/to/model.pth is required.")
         sys.exit(1)
 
+    detector = cfg.get("detector", "mediapipe")
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    features = extract(video_path, cfg, modality=modality, device=device)
+    features = extract(video_path, cfg, modality=modality, device=device,
+                       detector=detector)
 
     torch.save(features, output_path)
     print(f"\nSaved features to: {output_path}")

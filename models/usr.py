@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-
-from espnet.nets.pytorch_backend.e2e_asr_transformer import E2E
+from hydra.utils import instantiate
 
 
 class USRModel(nn.Module):
@@ -10,7 +9,7 @@ class USRModel(nn.Module):
         self.cfg = cfg
         self.odim = 1049
         self.ignore_id = -1
-        self.backbone = E2E(self.odim, backbone_args)
+        self.backbone = instantiate(cfg.model.backbone)
         self.sos = self.odim - 1
         self.eos = self.odim - 1
 
@@ -23,5 +22,5 @@ class USRModel(nn.Module):
 class USR(nn.Module):
     def __init__(self, cfg=None):
         super().__init__()
-        self.model = USRModel(cfg, cfg.model.backbone)
+        self.model = USRModel(cfg)
         self.cfg = cfg

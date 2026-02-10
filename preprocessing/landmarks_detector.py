@@ -88,14 +88,67 @@ class _MediaPipeDetector:
             self._landmarker = None
 
 
-def _build_mediapipe_detector():
-    """Build detector using MediaPipe (pip install mediapipe)."""
-    return _MediaPipeDetector()
+class _RetinaFaceDetector:
+    """Wrapper for RetinaFace + FAN landmark detection (ibug packages).
+
+    This provides higher-accuracy 68-point landmarks compared to MediaPipe,
+    matching the detector used in the auto_avsr repository.
+    Requires GPU and the ibug packages (see README for full instructions).
+    """
+
+    def __init__(self, device="cuda:0"):
+        try:
+            from ibug.face_detection import RetinaFacePredictor
+            from ibug.face_alignment import FANPredictor
+        except ImportError:
+            raise ImportError(
+                "ibug face_detection/face_alignment not found. "
+                "These packages require cloning and installing in editable mode. "
+                "See the README 'RetinaFace+FAN' section for full instructions."
+            )
+
+        self._face_detector = RetinaFacePredictor(
+            threshold=0.8,
+            device=device,
+            model=RetinaFacePredictor.get_model("resnet50"),
+        )
+        self._landmark_detector = FANPredictor(
+            device=device,
+            model=FANPredictor.get_model("2dfan2"),
+        )
+
+    def __call__(self, video_frames):
+        landmarks = []
+        for frame in video_frames:
+            detected_faces = self._face_detector(frame, rgb=True)
+            if len(detected_faces) == 0:
+                landmarks.append(None)
+            else:
+                # Select the largest face by bounding-box area
+                face_areas = (detected_faces[:, 2] - detected_faces[:, 0]) * (
+                    detected_faces[:, 3] - detected_faces[:, 1]
+                )
+                largest_idx = np.argmax(face_areas)
+                face = detected_faces[largest_idx : largest_idx + 1]
+                pts, _ = self._landmark_detector(frame, face, rgb=True)
+                landmarks.append(pts[0].astype(np.float32))
+        return landmarks
+
+    def close(self):
+        """No-op — ibug predictors don't require explicit cleanup."""
+        pass
 
 
 class LandmarksDetector:
-    def __init__(self, **kwargs):
-        self._detect = _build_mediapipe_detector()
+    def __init__(self, detector="mediapipe", device="cuda:0", **kwargs):
+        if detector == "mediapipe":
+            self._detect = _MediaPipeDetector()
+        elif detector == "retinaface":
+            self._detect = _RetinaFaceDetector(device=device)
+        else:
+            raise ValueError(
+                f"Unknown detector '{detector}'. Choose 'mediapipe' or 'retinaface'."
+            )
 
     def __call__(self, video_frames):
         return self._detect(video_frames)

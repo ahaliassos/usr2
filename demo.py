@@ -217,14 +217,15 @@ def decode(features: torch.Tensor, beam_search: BatchBeamSearch,
 
 @torch.no_grad()
 def transcribe(video_path: str, cfg: DictConfig, modality: str = "av",
-               device: torch.device = torch.device("cuda")):
+               device: torch.device = torch.device("cuda"),
+               detector: str = "mediapipe"):
     """End-to-end: video path in, transcription string out."""
     log.info("Loading video: %s", video_path)
     video_frames, audio = load_video_audio(video_path)
 
     # --- face / mouth preprocessing -----------------------------------------
     log.info("Detecting landmarks and cropping mouth region ...")
-    ld = LandmarksDetector()
+    ld = LandmarksDetector(detector=detector)
     vp = VideoProcess(convert_gray=False)
     video_tensor = preprocess_video(video_frames, ld, vp)
     ld.close()  # Explicitly close to avoid Python 3.13+ shutdown errors
@@ -278,8 +279,11 @@ def main(cfg: DictConfig):
         print("Error: model.pretrained_model_path is required.")
         sys.exit(1)
 
+    detector = cfg.get("detector", "mediapipe")
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    text = transcribe(video_path, cfg, modality=modality, device=device)
+    text = transcribe(video_path, cfg, modality=modality, device=device,
+                      detector=detector)
     print(f"\n{'='*60}")
     print(f" Modality : {modality}")
     print(f" Video    : {video_path}")

@@ -54,6 +54,27 @@ pip install -r requirements.txt
 
 This installs all remaining packages, including [MediaPipe](https://github.com/google-ai-edge/mediapipe) for face landmark detection (used for mouth cropping).
 
+**Optional: Higher-accuracy face detection with RetinaFace+FAN**
+
+MediaPipe is the default (CPU-based). For higher-accuracy landmark detection, install the ibug packages. This requires a CUDA GPU.
+
+```bash
+# face_detection uses git-lfs for model weights
+git lfs install
+GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/hhj1897/face_detection.git
+cd face_detection
+wget -O ibug/face_detection/retina_face/weights/Resnet50_Final.pth \
+  https://huggingface.co/public-data/ibug-face-detection/resolve/main/retina_face/Resnet50_Final.pth
+pip install -e .
+cd ..
+
+# face_alignment must be installed from a local clone (editable mode)
+git clone https://github.com/hhj1897/face_alignment.git
+pip install -e face_alignment
+```
+
+Then pass `detector=retinaface` to `demo.py` or `extract_features.py`.
+
 ---
 
 ## Transcribe a Video
@@ -88,6 +109,14 @@ python demo.py video=video.mp4 model.pretrained_model_path=model.pth modality=v
 
 # Audio only
 python demo.py video=video.mp4 model.pretrained_model_path=model.pth modality=a
+```
+
+### Face detector
+
+By default, MediaPipe is used for face landmark detection. For higher accuracy, use RetinaFace+FAN (requires ibug packages and a CUDA GPU):
+
+```bash
+python demo.py video=video.mp4 model.pretrained_model_path=model.pth detector=retinaface
 ```
 
 ### Using a different model size
@@ -131,6 +160,12 @@ python extract_features.py \
   video=path/to/video.mp4 \
   model.pretrained_model_path=path/to/checkpoint.pth \
   modality=v output=video_features.pt
+
+# Use RetinaFace+FAN for face detection (optional, requires ibug packages)
+python extract_features.py \
+  video=path/to/video.mp4 \
+  model.pretrained_model_path=path/to/checkpoint.pth \
+  detector=retinaface output=features.pt
 ```
 
 Load in Python:

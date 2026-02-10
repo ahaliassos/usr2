@@ -12,12 +12,19 @@ from espnet.nets.scorers.ctc import CTCPrefixScorer
 
 
 class E2E(torch.nn.Module):
-    def __init__(self, odim, args, ignore_id=-1):
+    def __init__(self, odim, args=None, ignore_id=-1, **kwargs):
         """Construct an E2E object.
         :param int odim: dimension of outputs
         :param Namespace args: argument Namespace containing options
         """
         torch.nn.Module.__init__(self)
+
+        # Support both namespace-style args and direct kwargs for Hydra
+        if args is None and kwargs:
+            from types import SimpleNamespace
+            args = SimpleNamespace(**kwargs)
+        elif args is None:
+            raise ValueError("Either args or keyword arguments must be provided")
 
         self.encoder = Encoder(
             idim=args.idim,

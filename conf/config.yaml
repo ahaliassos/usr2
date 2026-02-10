@@ -17,4 +17,5 @@ compile_model: True
 gpus:
 video:
 modality: av
+detector: mediapipe
 output: features.pt
